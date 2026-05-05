@@ -1,0 +1,224 @@
+/*
+*PROJETO INTEGRADOR V - UNIVESP
+*Monitoramento de motobomba de pivô central
+*
+*Objetivo: 
+*   - Medir temperatura da carcaça (DS18B20).
+*   - Medir vibração (MPU6050)
+*   - Enviar dados via MQTT para análise preditiva.
+*
+*SIMULAÇÃO DE FALHA: 
+*   Um botão físico multiplca o valor da vibração,
+*   simulando o aumento causado por obstrução na sucção.
+*
+*AUTORA: Marcela Rodrigues Siqueira Sturaro
+Data: 
+*/
+
+
+//===============================================================
+//1. Inclusão de bibliotecas 
+//===============================================================
+//WiFi e MQTT
+#include <WiFi.h>
+#include <PubSubClient.h>       //Cliente MQTT
+#include <OneWire.h>            //Barramento 1-Wire (para o DSB18B20)
+#include <DallasTemperature.h>  //Sensor DS18B20
+#include <Wire.h>               //Comunicação I2C (para o MPU6050)
+#include <Adafruit_MPU6050.h>   //Sensor MPU6050 
+
+//===============================================================
+//2. Credenciais
+//===============================================================
+#include "config.h"
+
+//===============================================================
+//3. Definição dos pinos de conexão dos dispositivos
+//===============================================================
+#define ONE_WIRE_BUS 4        // Pino de dados DS18B20
+#define BOTAO_SIMULACAO 15    // Botao ativar simulação de obstrução
+#define LED_SIMULACAO 2       //Led onboard (GPIO2) - indica simulação ativa
+
+// Obs: O MPU6050 uso o barramento I2C nos pinos fixos do ESP32:
+//      SDA -> GPIO21, SCL -> GPIO22. Não é necessário #define, mas será
+//      inicializado explicitamente no setup().
+
+//===============================================================
+//4. Objetos dos sensores e comunicação
+//===============================================================
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensorTemperatura(&oneWire);
+Adafruit_MPU6050 sensorVibracao;
+WiFiClient clientWiFi;
+PubSubClient clienteMQTT(clientWiFi);
+
+//===============================================================
+//5. Variáveis de controle de temporização
+//===============================================================
+unsigned long ultimoEnvio = 0;
+const long intervaloEnvio = 30000;    // Envia dados a cada 30 segundos
+
+//===============================================================
+//6. Estado de simulação de falha
+//===============================================================
+bool falhaSimulada = false;     //Inicia desligada (operação normal)
+
+//===============================================================
+//7. Configuração inicial 
+//===============================================================
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("Inicializando o sistema de monitoramento de motobomba...");
+
+  // --- Configuração dos pinos de entrada/saída ---
+  pinMode(BOTAO_SIMULACAO, INPUT_PULLUP); //Pull-up interno: HIGH quando solto
+  pinMode(LED_SIMULACAO, OUTPUT);
+  digitalWrite(LED_SIMULACAO, LOW);
+
+  // --- Incializa barramento I2C ---
+  Wire.begin(21, 22);    // SDA = GPIO21, SCL = GPIO22
+  if (!sensorVibracao.begin()) {
+    Serial.println("Erro: MPU6050 não encontrado. Verifique as conxões I2C.");
+    while (1); //Para a execuçaõ se o sensor não estiver presente
+  }
+
+  //Configura a faixa de aceleração para ±8g (adequado para vibrações de máquinas)
+  sensorVibracao.setAccelerometerRange(MPU6050_RANGE_8_G);
+  Serial.println("MPU6050 inicializado");
+
+  // --- Inicializa o senor de temperatura ---
+  sensorTemperatura.begin();
+  Serial.println("DS18B20 inicializado.");
+
+  // --- Conexão wi-Fi e MQTT ---
+  conectarWiFi();
+  clienteMQTT.setServer(mqtt_server, mqtt_port);
+}
+
+//===============================================================
+//8. Conecta à rede Wi-Fi
+//===============================================================
+void conectarWiFi() {
+  delay(10);
+  Serial.print("Conectando ao Wi-Fi: ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi conectado!");
+  Serial.print("Endereço IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+//===============================================================
+//9. Reconecta ao broker MQTT (caso a conexão caia)
+//===============================================================
+void reconectarMQTT() {
+  while (!clienteMQTT.connected()) {
+    Serial.print("Conectando ao broker MQTT...");
+    //Gera um ID único para este cliente
+    String idCliente ="ESP32-motobomba-" + String(random(0xffff), HEX);
+    if (clienteMQTT.connect(idCliente.c_str(), mqtt_usr, mqtt_password)) {
+      Serial.println("conectado!");
+    } else {
+      Serial.print("falhou, estado = ");
+      Serial.print(clienteMQTT.state());
+      Serial.println(" nova tentativa em 5 segundos");
+      delay(5000);
+    }
+  }
+}
+
+//===============================================================
+//10. Cálculo da intensidade da vibração (magnitude)
+//===============================================================
+// O MPU6050 fornece aceleração nos três eixos (x, y, z).
+// Para ter uma única medida representativa da vibração,
+//calculamos a magnitude do vetor: sqrt(x² + y² + z²).
+//Quanto maior o valor, mais intensa é a vibração.
+float calcularVibracao() {
+  sensors_event_t a, g, temp;
+  sensorVibracao.getEvent(&a, &g, &temp);
+  float x = a.acceleration.x;
+  float y = a.acceleration.y;
+  float z = a.acceleration.z;
+  return sqrt(x*x + y*y + z*z);
+}
+
+//===============================================================
+//11. Loop principal
+//===============================================================
+void loop() {
+  //Matem as conexões ativas
+  if (WiFi.status() != WL_CONNECTED) conectarWiFi();
+  if (!clienteMQTT.connected()) reconectarMQTT();
+  clienteMQTT.loop();
+
+  // --- Verifica se o botão de simulação foi pressionado ----
+  if (digitalRead(BOTAO_SIMULACAO) == LOW) {
+    falhaSimulada = !falhaSimulada;
+    digitalWrite(LED_SIMULACAO, falhaSimulada ? HIGH : LOW);
+    Serial.print("Simulação de obstrução ");
+    Serial.println(falhaSimulada ? "ATIVADA" : "DESATIVADA");
+    delay(250);   // Debounce simple para evitar leituras multiplas 
+  }
+
+  //  --- Envio periódico dos dados ---
+  unsigned long agora = millis();
+  if (agora - ultimoEnvio > intervaloEnvio) {
+    ultimoEnvio = agora;
+
+    //Leitura dos sensores (valores reais)
+    sensorTemperatura.requestTemperatures();
+    float temperaturaReal = sensorTemperatura.getTempCByIndex(0);
+    float vibracaoReal = calcularVibracao();
+
+
+    // Se a simulação estiver ativa, multipica-se o valor da vibração
+    float temperaturaEnviar = temperaturaReal;
+    float vibracaoEnviar = vibracaoReal;
+    if (falhaSimulada) {
+      vibracaoEnviar = vibracaoReal * 10.0;
+      Serial.println("--- SIMULAÇÃO ATIVA ---");
+      Serial.print("Vibração real: "); Serial.println(vibracaoReal);
+      Serial.print("Vibração enviada: "); Serial.println(vibracaoEnviar);
+    }
+
+    // Converte os números para string (dtostrf) e publica nos tópicos MQTT
+    char tempStr[10];
+    char vibStr[10];
+    dtostrf(temperaturaEnviar, 6, 2, tempStr);
+    dtostrf(vibracaoEnviar, 6, 2, vibStr);
+    clienteMQTT.publish(topicoTemperatura, tempStr);
+    clienteMQTT.publish(topicoVibracao, vibStr);
+
+    //Log 
+    Serial.print("Dados enviados -> Temperatura: ");
+    Serial.print(temperaturaEnviar);
+    Serial.print(" °C, Vibração: ");
+    Serial.println(vibracaoEnviar);
+  }
+
+  delay(100); //Pequena pausa para evitar watchdog e estabilizar leituras
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,26 @@
+# Arquivos de credenciais (Nunca commitar)
+config.h
+.env
+backend-freezer/.env
+esp32/config.h
+
+
+# Pastas de dependencias
+node_modules/
+backend-freezer/node_modules/
+frontend-freezer/node_modules/
+
+
+# Arquivos temporarios e de sistema
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Arquivos de compilação do arduino
+*.ino.previous
+*.ino.tmp
+*.inowith_bootloader.bin
+
+
+

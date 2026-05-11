@@ -17,7 +17,7 @@ Data:
 
 
 //===============================================================
-//1. Inclusão de bibliotecas 
+// Inclusão de bibliotecas 
 //===============================================================
 //WiFi e MQTT
 #include <WiFi.h>
@@ -25,15 +25,22 @@ Data:
 #include <OneWire.h>            //Barramento 1-Wire (para o DSB18B20)
 #include <DallasTemperature.h>  //Sensor DS18B20
 #include <Wire.h>               //Comunicação I2C (para o MPU6050)
-#include <Adafruit_MPU6050.h>   //Sensor MPU6050 
+#include <MPU9250_asukiaaa.h>   //Sensor MPU6500 
 
 //===============================================================
-//2. Credenciais
+//Habilita/dessbilita MQTT
 //===============================================================
+#define USAR_MQTT false
+
+//===============================================================
+// Credenciais
+//===============================================================
+#if USAR_MQTT
 #include "config.h"
+#endif
 
 //===============================================================
-//3. Definição dos pinos de conexão dos dispositivos
+// Definição dos pinos de conexão dos dispositivos
 //===============================================================
 #define ONE_WIRE_BUS 4        // Pino de dados DS18B20
 #define BOTAO_SIMULACAO 15    // Botao ativar simulação de obstrução
@@ -44,27 +51,27 @@ Data:
 //      inicializado explicitamente no setup().
 
 //===============================================================
-//4. Objetos dos sensores e comunicação
+// Objetos dos sensores e comunicação
 //===============================================================
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensorTemperatura(&oneWire);
-Adafruit_MPU6050 sensorVibracao;
+MPU9250_asukiaaa sensorVibracao;
 WiFiClient clientWiFi;
 PubSubClient clienteMQTT(clientWiFi);
 
 //===============================================================
-//5. Variáveis de controle de temporização
+// Variáveis de controle de temporização
 //===============================================================
 unsigned long ultimoEnvio = 0;
 const long intervaloEnvio = 30000;    // Envia dados a cada 30 segundos
 
 //===============================================================
-//6. Estado de simulação de falha
+// Estado de simulação de falha
 //===============================================================
 bool falhaSimulada = false;     //Inicia desligada (operação normal)
 
 //===============================================================
-//7. Configuração inicial 
+// Configuração inicial 
 //===============================================================
 void setup() {
   Serial.begin(115200);
@@ -78,27 +85,28 @@ void setup() {
 
   // --- Incializa barramento I2C ---
   Wire.begin(21, 22);    // SDA = GPIO21, SCL = GPIO22
-  if (!sensorVibracao.begin()) {
-    Serial.println("Erro: MPU6050 não encontrado. Verifique as conxões I2C.");
-    while (1); //Para a execuçaõ se o sensor não estiver presente
-  }
+  
+  sensorVibracao.setWire(&Wire);
 
-  //Configura a faixa de aceleração para ±8g (adequado para vibrações de máquinas)
-  sensorVibracao.setAccelerometerRange(MPU6050_RANGE_8_G);
-  Serial.println("MPU6050 inicializado");
+  sensorVibracao.beginAccel();
+
+  Serial.println("MPU6500 inicializado");
 
   // --- Inicializa o senor de temperatura ---
   sensorTemperatura.begin();
   Serial.println("DS18B20 inicializado.");
 
   // --- Conexão wi-Fi e MQTT ---
+  #if USAR_MQTT
   conectarWiFi();
   clienteMQTT.setServer(mqtt_server, mqtt_port);
+  #endif
 }
 
 //===============================================================
-//8. Conecta à rede Wi-Fi
+// Conecta à rede Wi-Fi
 //===============================================================
+#if USAR_MQTT
 void conectarWiFi() {
   delay(10);
   Serial.print("Conectando ao Wi-Fi: ");
@@ -112,10 +120,12 @@ void conectarWiFi() {
   Serial.print("Endereço IP: ");
   Serial.println(WiFi.localIP());
 }
+#endif
 
 //===============================================================
-//9. Reconecta ao broker MQTT (caso a conexão caia)
+// Reconecta ao broker MQTT (caso a conexão caia)
 //===============================================================
+#if USAR_MQTT
 void reconectarMQTT() {
   while (!clienteMQTT.connected()) {
     Serial.print("Conectando ao broker MQTT...");
@@ -131,31 +141,40 @@ void reconectarMQTT() {
     }
   }
 }
+#endif
 
 //===============================================================
-//10. Cálculo da intensidade da vibração (magnitude)
+// Cálculo da intensidade da vibração (magnitude)
 //===============================================================
 // O MPU6050 fornece aceleração nos três eixos (x, y, z).
 // Para ter uma única medida representativa da vibração,
 //calculamos a magnitude do vetor: sqrt(x² + y² + z²).
 //Quanto maior o valor, mais intensa é a vibração.
 float calcularVibracao() {
-  sensors_event_t a, g, temp;
-  sensorVibracao.getEvent(&a, &g, &temp);
-  float x = a.acceleration.x;
-  float y = a.acceleration.y;
-  float z = a.acceleration.z;
-  return sqrt(x*x + y*y + z*z);
+  sensorVibracao.accelUpdate();
+  
+  float x = sensorVibracao.accelX();
+  float y = sensorVibracao.accelY();
+  float z = sensorVibracao.accelZ();
+  
+  float magnitude = sqrt(
+    x*x +
+    y*y +
+    z*z
+  );
+  return abs(magnitude -1.0);
 }
 
 //===============================================================
-//11. Loop principal
+// Loop principal
 //===============================================================
 void loop() {
   //Matem as conexões ativas
+  #if USAR_MQTT
   if (WiFi.status() != WL_CONNECTED) conectarWiFi();
   if (!clienteMQTT.connected()) reconectarMQTT();
   clienteMQTT.loop();
+  #endif
 
   // --- Verifica se o botão de simulação foi pressionado ----
   if (digitalRead(BOTAO_SIMULACAO) == LOW) {
@@ -192,8 +211,11 @@ void loop() {
     char vibStr[10];
     dtostrf(temperaturaEnviar, 6, 2, tempStr);
     dtostrf(vibracaoEnviar, 6, 2, vibStr);
+
+    #if USAR_MQTT
     clienteMQTT.publish(topicoTemperatura, tempStr);
     clienteMQTT.publish(topicoVibracao, vibStr);
+    #endif
 
     //Log 
     Serial.print("Dados enviados -> Temperatura: ");

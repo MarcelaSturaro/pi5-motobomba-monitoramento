@@ -21,6 +21,7 @@ Data:
 //===============================================================
 //WiFi e MQTT
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>       //Cliente MQTT
 #include <OneWire.h>            //Barramento 1-Wire (para o DSB18B20)
 #include <DallasTemperature.h>  //Sensor DS18B20
@@ -30,7 +31,7 @@ Data:
 //===============================================================
 //Habilita/dessbilita MQTT
 //===============================================================
-#define USAR_MQTT false
+#define USAR_MQTT true
 
 //===============================================================
 // Credenciais
@@ -56,7 +57,7 @@ Data:
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensorTemperatura(&oneWire);
 MPU9250_asukiaaa sensorVibracao;
-WiFiClient clientWiFi;
+WiFiClientSecure clientWiFi;
 PubSubClient clienteMQTT(clientWiFi);
 
 //===============================================================
@@ -75,6 +76,7 @@ bool falhaSimulada = false;     //Inicia desligada (operação normal)
 //===============================================================
 void setup() {
   Serial.begin(115200);
+  clientWiFi.setInsecure();
   delay(1000);
   Serial.println("Inicializando o sistema de monitoramento de motobomba...");
 
@@ -162,7 +164,7 @@ float calcularVibracao() {
     y*y +
     z*z
   );
-  return abs(magnitude -1.0);
+  return magnitude;
 }
 
 //===============================================================
@@ -195,7 +197,7 @@ void loop() {
     float temperaturaReal = sensorTemperatura.getTempCByIndex(0);
     float vibracaoReal = calcularVibracao();
 
-
+    
     // Se a simulação estiver ativa, multipica-se o valor da vibração
     float temperaturaEnviar = temperaturaReal;
     float vibracaoEnviar = vibracaoReal;

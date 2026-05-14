@@ -1,6 +1,7 @@
 const express = require("express");
 require("dotenv").config();
 const mqttClient = require("./mqtt");
+const { writeApi, Point } = require("./influx");
 
 const app = express();
 app.use(express.json());
@@ -27,11 +28,20 @@ mqttClient.on("message", (topic, message) => {
   if (topic === process.env.MQTT_TOPIC_TEMPERATURA) {
   dados.temperatura.push({ valor, data: new Date() });
   console.log("Temp:", valor);
+  const pointTemp = new Point("temperatura")
+    .floatField("valor", valor);
+
+  writeApi.writePoint(pointTemp);
+  
   }
 
   if (topic === process.env.MQTT_TOPIC_VIBRACAO) {
   dados.vibracao.push({ valor, data: new Date() });
   console.log("Vibração:", valor);
+  const pointVib = new Point("vibracao")
+    .floatField("valor", valor);
+  writeApi.writePoint(pointVib);
+  
   }
 });
 

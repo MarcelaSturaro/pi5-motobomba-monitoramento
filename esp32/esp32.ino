@@ -64,7 +64,7 @@ PubSubClient clienteMQTT(clientWiFi);
 // Variáveis de controle de temporização
 //===============================================================
 unsigned long ultimoEnvio = 0;
-const long intervaloEnvio = 30000;    // Envia dados a cada 30 segundos
+const long intervaloEnvio = 5000;    // Envia dados a cada 30 segundos
 
 //===============================================================
 // Estado de simulação de falha
@@ -171,7 +171,7 @@ float calcularVibracao() {
 // Loop principal
 //===============================================================
 void loop() {
-  //Matem as conexões ativas
+  //Mantem as conexões ativas
   #if USAR_MQTT
   if (WiFi.status() != WL_CONNECTED) conectarWiFi();
   if (!clienteMQTT.connected()) reconectarMQTT();

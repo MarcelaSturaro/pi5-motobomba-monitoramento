@@ -9,6 +9,7 @@ function App() {
 
   const fetchData = async () => {
     const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3000";
+    console.log("API URL:", apiUrl);
     try{  
       const response = await axios.get(`${apiUrl}/dados`);
 

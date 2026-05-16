@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
 import "chart.js/auto";
 import VLibras from "react-vlibras";
@@ -12,13 +12,12 @@ function App() {
   const [audioAtivado, setAudioAtivado] = useState(false);
   const ultimoAlertaVibRef = useRef(false);
   const ultimoAlertaTempRef = useRef(false);
-  const audioPermitidoRef = useRef(false); // referência síncrona
+  const audioPermitidoRef = useRef(false);
 
   const LIMITE_VIBRACAO = 5.0;
   const LIMITE_TEMPERATURA = 40.0;
 
   const falar = (mensagem) => {
-    // usa a ref, não o estado, para ser síncrono
     if (!audioPermitidoRef.current) return;
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(mensagem);
@@ -31,14 +30,13 @@ function App() {
 
   const ativarAudio = () => {
     audioPermitidoRef.current = true;
-    setAudioAtivado(true); // apenas para esconder o botão
-    // Agora fala os alertas ativos imediatamente
+    setAudioAtivado(true);
     if (alertaVibracao) falar("Atenção! Vibração alta na motobomba.");
     if (alertaTemperatura) falar("Cuidado! Temperatura da motobomba muito alta.");
     falar("Alerta sonoro ativado");
   };
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3000";
     try {
       const response = await axios.get(`${apiUrl}/dados`);
@@ -68,13 +66,13 @@ function App() {
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
     }
-  };
+  }, [alertaVibracao, alertaTemperatura]); // dependências do useCallback
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]); // agora com dependência correta
 
   return (
     <div style={{ padding: 20 }}>

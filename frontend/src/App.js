@@ -17,7 +17,7 @@ function App() {
   const LIMITE_VIBRACAO = 5.0;
   const LIMITE_TEMPERATURA = 40.0;
 
-  const falar = (mensagem) => {
+  const falar = useCallback((mensagem) => {
     if (!audioPermitidoRef.current) return;
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(mensagem);
@@ -26,15 +26,15 @@ function App() {
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     }
-  };
+  }, []); // sem dependências, pois usa apenas a ref
 
-  const ativarAudio = () => {
+  const ativarAudio = useCallback(() => {
     audioPermitidoRef.current = true;
     setAudioAtivado(true);
     if (alertaVibracao) falar("Atenção! Vibração alta na motobomba.");
     if (alertaTemperatura) falar("Cuidado! Temperatura da motobomba muito alta.");
     falar("Alerta sonoro ativado");
-  };
+  }, [alertaVibracao, alertaTemperatura, falar]);
 
   const fetchData = useCallback(async () => {
     const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3000";
@@ -62,17 +62,16 @@ function App() {
         ultimoAlertaTempRef.current = novoAlertaTemp;
       }
       setAlertaTemperatura(novoAlertaTemp);
-
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
     }
-  }, [alertaVibracao, alertaTemperatura]); // dependências do useCallback
+  }, [falar]); // dependência: falar
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
-  }, [fetchData]); // agora com dependência correta
+  }, [fetchData]);
 
   return (
     <div style={{ padding: 20 }}>

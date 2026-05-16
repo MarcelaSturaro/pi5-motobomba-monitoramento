@@ -65,7 +65,7 @@ PubSubClient clienteMQTT(clientWiFi);
 // Variáveis de controle de temporização
 //===============================================================
 unsigned long ultimoEnvio = 0;
-const long intervaloEnvio = 5000;    // Envia dados a cada 30 segundos
+const long intervaloEnvio = 30000;    // Envia dados a cada 30 segundos
 
 //===============================================================
 // Estado de simulação de falha

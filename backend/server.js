@@ -1,5 +1,5 @@
 const express = require("express");
-const cors = require("cors");          // ← adicione esta linha
+const cors = require("cors");          // 
 require("dotenv").config();
 const mqttClient = require("./mqtt");
 const { writeApi, Point } = require("./influx");
@@ -9,7 +9,7 @@ const app = express();
 // ===========================================
 // MIDDLEWARES
 // ===========================================
-app.use(cors());                       // ← habilita CORS para qualquer origem
+app.use(cors());                       //  habilita CORS para qualquer origem
 app.use(express.json());
 
 // ===========================================

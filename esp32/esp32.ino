@@ -27,6 +27,7 @@ Data:
 #include <DallasTemperature.h>  //Sensor DS18B20
 #include <Wire.h>               //Comunicação I2C (para o MPU6050)
 #include <MPU9250_asukiaaa.h>   //Sensor MPU6500 
+#include "esp_task_wdt.h"
 
 //===============================================================
 //Habilita/dessbilita MQTT
@@ -80,6 +81,14 @@ void setup() {
   delay(1000);
   Serial.println("Inicializando o sistema de monitoramento de motobomba...");
 
+  //--- Configura e inicializa o Watchdog Timer (WDT) ---
+  esp_task_wdt_config_t wdt_config = {
+    .timeout_ms = 10000,     // 10 segundos de timeout
+    .trigger_panic = true,   //Se estourar, reeinicia a ESP
+  };
+  esp_task_wdt_init(&wdt_config);
+  esp_task_wdt_add(NULL);
+
   // --- Configuração dos pinos de entrada/saída ---
   pinMode(BOTAO_SIMULACAO, INPUT_PULLUP); //Pull-up interno: HIGH quando solto
   pinMode(LED_SIMULACAO, OUTPUT);
@@ -87,11 +96,8 @@ void setup() {
 
   // --- Incializa barramento I2C ---
   Wire.begin(21, 22);    // SDA = GPIO21, SCL = GPIO22
-  
   sensorVibracao.setWire(&Wire);
-
-  sensorVibracao.beginAccel();
-
+  sensorVibracao.beginAccel();    //Inicializa acelerometro do MPU6500
   Serial.println("MPU6500 inicializado");
 
   // --- Inicializa o senor de temperatura ---
@@ -115,6 +121,7 @@ void conectarWiFi() {
   Serial.println(ssid);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
+    esp_task_wdt_reset();  //Reseta o watchdog para evitar reinicialização durante a conexão
     delay(500);
     Serial.print(".");
   }
@@ -130,6 +137,7 @@ void conectarWiFi() {
 #if USAR_MQTT
 void reconectarMQTT() {
   while (!clienteMQTT.connected()) {
+    esp_task_wdt_reset();    //Reseta o watchdog durante a reconexão
     Serial.print("Conectando ao broker MQTT...");
     //Gera um ID único para este cliente
     String idCliente ="ESP32-motobomba-" + String(random(0xffff), HEX);
@@ -153,25 +161,26 @@ void reconectarMQTT() {
 //calculamos a magnitude do vetor: sqrt(x² + y² + z²).
 //Quanto maior o valor, mais intensa é a vibração.
 float calcularVibracao() {
-  sensorVibracao.accelUpdate();
-  
-  float x = sensorVibracao.accelX();
-  float y = sensorVibracao.accelY();
-  float z = sensorVibracao.accelZ();
-  
-  float magnitude = sqrt(
-    x*x +
-    y*y +
-    z*z
-  );
-  return magnitude;
+  if (sensorVibracao.accelUpdate() == 0) {
+    float x = sensorVibracao.accelX();
+    float y = sensorVibracao.accelY();
+    float z = sensorVibracao.accelZ();
+    
+    // Calcula a magnitude
+    float magnitude = sqrt(x*x + y*y + z*z);
+    return magnitude;
+  } else {
+    Serial.println("Falha na leitura do MPU6500");
+    return 0;
+  }
 }
 
 //===============================================================
 // Loop principal
 //===============================================================
 void loop() {
-  //Mantem as conexões ativas
+  esp_task_wdt_reset();    // Reseta o watchdog em toda iteração do loop
+  // --- Mantem as conexões ativas ---
   #if USAR_MQTT
   if (WiFi.status() != WL_CONNECTED) conectarWiFi();
   if (!clienteMQTT.connected()) reconectarMQTT();

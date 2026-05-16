@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Line } from "react-chartjs-2";
 import axios from "axios";
 import "chart.js/auto";
+import VLibras from "react-vlibras";
 
 function App() {
   const [temperatura, setTemperatura] = useState([]);
@@ -27,44 +28,48 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const chartTemperatura = {
-    labels: temperatura.map(d =>
-      new Date(d.data).toLocaleTimeString()
-    ),
-    datasets: [
-      {
+  const chartTemperatura = useMemo(() => ({
+    labels: temperatura.map(d => new Date(d.data).toLocaleTimeString()),
+    datasets: [{
         label: "Temperatura (°C)",
         data: temperatura.map(d => d.valor),
         borderColor: "red",
-        fill: false,
-      },
-    ],
-  };
+        backgroundColor: "rgba(255,0,0,0.1)",
+        fill: true,
+       	tension: 0.2    //suaviza a linha
+    }]
+  }), [temperatura]);
 
-  const chartVibracao = {
-    labels: vibracao.map(d =>
-      new Date(d.data).toLocaleTimeString()
-    ),
-    datasets: [
-      {
+  const chartVibracao = useMemo(() => ({
+    labels: vibracao.map(d => new Date(d.data).toLocaleTimeString()),
+    datasets: [{
         label: "Vibração",
         data: vibracao.map(d => d.valor),
         borderColor: "blue",
-        fill: false,
-      },
-    ],
-  };
+	backgroundColor: "rgba(0,0,255,0.1)",
+        fill: true,
+	tension: 0.2
+    }]
+  }), [vibracao]);
 
   return (
     <div style={{ padding: 20 }}>
+      <VLibras /> {/* componente de acessibilidade */}
       <h2>Monitoramento Motobomba</h2>
 
-      <div style={{ height: 300 }}>
-        <Line data={chartTemperatura} />
+      <div style={{ height: 300, marginBottom: 40 }}>
+        {temperatura.length > 0 ? (
+          <Line data={chartTemperatura} options={{ responsive: true, maintainAspectRatio:false}} />
+	) : (
+	  <p>Aguardando dados de temperatura...</p>
+	)}
       </div>
-
-      <div style={{ height: 300, marginTop: 40 }}>
-        <Line data={chartVibracao} />
+      <div style={{ height: 300 }}>
+	{vibracao.length > 0 ? (
+          <Line data={chartVibracao} options={{ responsive: true, maintainAspectRatio: false }} />
+	) : (
+	  <p>Aguardadndo dados de vibração...</p>
+	)}
       </div>
     </div>
   );

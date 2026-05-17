@@ -22,5 +22,5 @@ Thumbs.db
 *.ino.tmp
 *.inowith_bootloader.bin
 
-
+backend/coverage/
 

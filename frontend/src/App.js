@@ -32,7 +32,7 @@ function App() {
     audioPermitidoRef.current = true;
     setAudioAtivado(true);
     if (alertaVibracao) falar("Atenção! Vibração alta na motobomba.");
-    if (alertaTemperatura) falar("Cuidado! Temperatura da motobomba muito alta.");
+    if (alertaTemperatura) falar("Cuidado! Temperatura da motobomba muito alta.");   //
     falar("Alerta sonoro ativado");
   }, [alertaVibracao, alertaTemperatura, falar]);
 

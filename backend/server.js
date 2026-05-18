@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");          // 
 require("dotenv").config();
-const mqtt = require("mqtt");
-const { InfluxDB, Point } = require('@influxdata/influxdb-client');
+const mqttClient = require("./mqtt");
+const { writeApi, Point } = require("./influx");
 
 const app = express();
 
@@ -22,61 +22,48 @@ let dados = {
 };
 
 // ===========================================
-//DETECTA AMBIENTE DE TESTE
+// MQTT SUBSCRIBE
 // ===========================================
-const modoTeste = process.env.NODE_ENV =='test';
+mqttClient.on("connect", () => {
+  mqttClient.subscribe(process.env.MQTT_TOPIC_TEMPERATURA);
+  mqttClient.subscribe(process.env.MQTT_TOPIC_VIBRACAO);
+  console.log("Backend conectado ao MQTT");
+});
 
-// ===========================================
-// CONNFIGURAÇÕES REAIS (APENAS FORA DO TESTE)
-// ===========================================
-let mqttClient;
-let writeApi;
+mqttClient.on("message", (topic, message) => {
+  const valor = parseFloat(message.toString());
 
-if (!modoTeste) {
+  // --- Temperatura ---
+  if (topic === process.env.MQTT_TOPIC_TEMPERATURA) {
+    dados.temperatura.push({
+      valor,
+      data: new Date().toISOString()
+    });
+    // Mantém apenas os últimos MAX_PONTOS
+    if (dados.temperatura.length > MAX_PONTOS) dados.temperatura.shift();
 
-  // ------------ MQTT------------
-  mqttClient = mqtt.connect(process.env.MQTT_BROKER, {
-    port: Number(process.env.MQTT_PORT),
-    username: process.env.MQTT_USER,
-    password: process.env.MQTT_PASS,
-  });
+    console.log("Temp:", valor);
 
-  mqttClient.on("connect", () => {
-    mqttClient.subscribe(process.env.MQTT_TOPIC_TEMPERATURA);
-    mqttClient.subscribe(process.env.MQTT_TOPIC_VIBRACAO);
-    console.log("Backend conectado ao MQTT");
-  });
+    const pointTemp = new Point("temperatura")
+      .floatField("valor", valor);
+    writeApi.writePoint(pointTemp);
+  }
 
-  mqttClient.on("message", (topic, message) => {
-    const valor = parseFloat(message.toString());
+  // --- Vibração ---
+  if (topic === process.env.MQTT_TOPIC_VIBRACAO) {
+    dados.vibracao.push({
+      valor,
+      data: new Date().toISOString()
+    });
+    if (dados.vibracao.length > MAX_PONTOS) dados.vibracao.shift();
 
-    // --- Temperatura ---
-    if (topic === process.env.MQTT_TOPIC_TEMPERATURA) {
-      dados.temperatura.push({valor, data: new Date().toISOString() });
-      if (dados.temperatura.length > MAX_PONTOS) dados.temperatura.shift();
+    console.log("Vibração:", valor);
 
-      console.log("Temp:", valor);
-
-      const pointTemp = new Point("temperatura").floatField("valor", valor);
-      writeApi.writePoint(pointTemp);
-    } 
-  
-    // --- Vibração --
-    if (topic === process.env.MQTT_TOPIC_VIBRACAO) {    
-       dados.vibracao.push({ valor, data: new Date().toISOString()});
-       if (dados.vibracao.length > MAX_PONTOS) dados.vibracao.shift();
-
-       console.log("Vibração:", valor);
-
-       const pointVib = new Point("vibracao").floatField("valor", valor);
-       writeApi.writePoint(pointVib);
-     }
-   });
-  
-   //------------InfluxDB------------
-   const influxDB = new InfluxDB({ url: process.env.INFLUX_URL, token: process.env.INFLUX_TOKEN });
-   writeApi = influxDB.getWriteApi(process.env.INFLUX_ORG, process.env.INFLUX_BUCKET, 'ns');
-}
+    const pointVib = new Point("vibracao")
+      .floatField("valor", valor);
+    writeApi.writePoint(pointVib);
+  }
+});
 
 // ===========================================
 // API
@@ -86,16 +73,9 @@ app.get("/dados", (req, res) => {
 });
 
 // ===========================================
-// EXPORTA O APP PARA TESTES
-// ===========================================
-module.exports = app;
-
-// ===========================================
 // INICIALIZAÇÃO
 // ===========================================
-if (require.main == module) {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log("Backend rodando na porta", PORT);
-  });
-}
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("Backend rodando na porta", PORT);
+});
